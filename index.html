@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes Agent 知识图谱</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; height: 100vh; }
+#container { width: 100%; height: 100%; position: relative; }
+svg { width: 100%; height: 100%; }
+#tooltip { position: absolute; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px 16px; pointer-events: none; opacity: 0; max-width: 380px; font-size: 13px; line-height: 1.6; box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 100; transition: opacity 0.15s; }
+#tooltip .name { font-weight: 700; font-size: 15px; color: #f0f6fc; margin-bottom: 3px; }
+#tooltip .cat { font-size: 12px; color: #8b949e; margin-bottom: 5px; }
+#tooltip .desc { color: #c9d1d9; }
+#controls { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 8px; align-items: center; }
+#search { background: #161b22; border: 1px solid #30363d; border-radius: 20px; padding: 8px 16px; color: #c9d1d9; font-size: 14px; width: 320px; outline: none; transition: border-color 0.2s; }
+#search:focus { border-color: #58a6ff; }
+#search::placeholder { color: #484f58; }
+#stats { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #484f58; z-index: 10; white-space: nowrap; }
+#legend { position: absolute; top: 80px; right: 16px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px; z-index: 10; font-size: 12px; max-height: calc(100vh - 200px); overflow-y: auto; }
+#legend h3 { font-size: 13px; margin-bottom: 6px; color: #8b949e; }
+#legend h4 { font-size: 11px; margin: 8px 0 4px; color: #484f58; text-transform: uppercase; letter-spacing: 0.5px; }
+.legend-item { display: flex; align-items: center; gap: 8px; padding: 4px 6px; cursor: pointer; border-radius: 4px; }
+.legend-item:hover { background: #21262d; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.legend-diamond { width: 10px; height: 10px; transform: rotate(45deg); flex-shrink: 0; background: #FFD700; }
+.legend-hex { width: 12px; height: 12px; flex-shrink: 0; background: #00E5FF; clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); }
+.legend-count { color: #484f58; margin-left: auto; padding-left: 8px; }
+.link { stroke: #21262d; stroke-opacity: 0.5; stroke-width: 1px; }
+.link.cross { stroke: #30363d; stroke-opacity: 0.3; stroke-dasharray: 4 3; stroke-width: 1.2px; }
+.link.highlight { stroke: #58a6ff; stroke-opacity: 0.8; stroke-width: 2px; stroke-dasharray: none; }
+.node text { fill: #8b949e; font-size: 9px; text-anchor: middle; pointer-events: none; opacity: 0; transition: opacity 0.2s; }
+.node:hover text { opacity: 1; }
+.node-cat text { fill: #f0f6fc; font-size: 11px; font-weight: 600; opacity: 1; }
+.node-special text { fill: #f0f6fc; font-size: 11px; font-weight: 600; opacity: 1; }
+.node-memory text, .node-knowledge text { font-size: 10px; opacity: 0.6; }
+.node-memory:hover text, .node-knowledge:hover text { opacity: 1; }
+.dimmed { opacity: 0.12 !important; }
+.link.dimmed { opacity: 0.04 !important; }
+</style>
+</head>
+<body>
+<div id="container">
+  <div id="controls">
+    <input type="text" id="search" placeholder="🔍 搜索技能、分类、记忆、知识... (114节点)">
+  </div>
+  <div id="legend"></div>
+  <div id="stats">Hermes Agent 知识图谱 — 拖拽节点 · 滚轮缩放 · 悬停查看 · 搜索高亮 · 88技能 · 2记忆 · 3知识</div>
+  <div id="tooltip"><div class="name"></div><div class="cat"></div><div class="desc"></div></div>
+</div>
+<script>
+const rawData = {"nodes": [{"id": "cat_apple", "name": "🍎 Apple", "desc": "🍎 Apple 分类", "group": "category", "size": 28, "color": "#007AFF", "cat": "apple"}, {"id": "cat_autonomous-ai-agents", "name": "🤖 AI代理", "desc": "🤖 AI代理 分类", "group": "category", "size": 28, "color": "#AF52DE", "cat": "autonomous-ai-agents"}, {"id": "cat_creative", "name": "🎨 创意", "desc": "🎨 创意 分类", "group": "category", "size": 28, "color": "#FF6B6B", "cat": "creative"}, {"id": "cat_data-science", "name": "📊 数据科学", "desc": "📊 数据科学 分类", "group": "category", "size": 28, "color": "#34C759", "cat": "data-science"}, {"id": "cat_devops", "name": "⚙️ DevOps", "desc": "⚙️ DevOps 分类", "group": "category", "size": 28, "color": "#FF9500", "cat": "devops"}, {"id": "cat_email", "name": "📧 邮件", "desc": "📧 邮件 分类", "group": "category", "size": 28, "color": "#5AC8FA", "cat": "email"}, {"id": "cat_gaming", "name": "🎮 游戏", "desc": "🎮 游戏 分类", "group": "category", "size": 28, "color": "#FF3B30", "cat": "gaming"}, {"id": "cat_github", "name": "🐙 GitHub", "desc": "🐙 GitHub 分类", "group": "category", "size": 28, "color": "#6E5494", "cat": "github"}, {"id": "cat_mcp", "name": "🔌 MCP", "desc": "🔌 MCP 分类", "group": "category", "size": 28, "color": "#FFD60A", "cat": "mcp"}, {"id": "cat_media", "name": "🎬 媒体", "desc": "🎬 媒体 分类", "group": "category", "size": 28, "color": "#FF2D55", "cat": "media"}, {"id": "cat_mlops", "name": "🧠 MLOps", "desc": "🧠 MLOps 分类", "group": "category", "size": 28, "color": "#0A84FF", "cat": "mlops"}, {"id": "cat_note-taking", "name": "📝 笔记", "desc": "📝 笔记 分类", "group": "category", "size": 28, "color": "#FFD700", "cat": "note-taking"}, {"id": "cat_productivity", "name": "💼 生产力", "desc": "💼 生产力 分类", "group": "category", "size": 28, "color": "#32D74B", "cat": "productivity"}, {"id": "cat_red-teaming", "name": "🛡️ 红队", "desc": "🛡️ 红队 分类", "group": "category", "size": 28, "color": "#FF375F", "cat": "red-teaming"}, {"id": "cat_research", "name": "🔬 研究", "desc": "🔬 研究 分类", "group": "category", "size": 28, "color": "#64D2FF", "cat": "research"}, {"id": "cat_smart-home", "name": "🏠 智能家居", "desc": "🏠 智能家居 分类", "group": "category", "size": 28, "color": "#FF9F0A", "cat": "smart-home"}, {"id": "cat_social-media", "name": "📱 社交", "desc": "📱 社交 分类", "group": "category", "size": 28, "color": "#1DA1F2", "cat": "social-media"}, {"id": "cat_software-development", "name": "💻 开发", "desc": "💻 开发 分类", "group": "category", "size": 28, "color": "#30D158", "cat": "software-development"}, {"id": "cat_uncategorized", "name": "📦 其他", "desc": "📦 其他 分类", "group": "category", "size": 28, "color": "#8E8E93", "cat": "uncategorized"}, {"id": "skill_apple-notes", "name": "apple-notes", "desc": "Apple备忘录：通过memo CLI创建、搜索、编辑备忘录", "group": "skill", "category": "apple", "size": 8, "color": "#007AFF"}, {"id": "skill_apple-reminders", "name": "apple-reminders", "desc": "Apple提醒事项：通过remindctl添加、列表、完成提醒", "group": "skill", "category": "apple", "size": 8, "color": "#007AFF"}, {"id": "skill_findmy", "name": "findmy", "desc": "查找设备：通过FindMy.app追踪Apple设备和AirTag", "group": "skill", "category": "apple", "size": 8, "color": "#007AFF"}, {"id": "skill_imessage", "name": "imessage", "desc": "iMessage/SMS：通过imsg CLI在macOS上收发消息", "group": "skill", "category": "apple", "size": 8, "color": "#007AFF"}, {"id": "skill_macos-computer-use", "name": "macos-computer-use", "desc": "macOS桌面操控：后台截图、鼠标键盘操作", "group": "skill", "category": "apple", "size": 8, "color": "#007AFF"}, {"id": "skill_claude-code", "name": "claude-code", "desc": "Claude Code CLI：委托编码任务（功能开发、PR）", "group": "skill", "category": "autonomous-ai-agents", "size": 8, "color": "#AF52DE"}, {"id": "skill_codex", "name": "codex", "desc": "OpenAI Codex CLI：委托编码任务", "group": "skill", "category": "autonomous-ai-agents", "size": 8, "color": "#AF52DE"}, {"id": "skill_hermes-agent", "name": "hermes-agent", "desc": "Hermes Agent：配置、扩展、贡献Hermes Agent自身", "group": "skill", "category": "autonomous-ai-agents", "size": 8, "color": "#AF52DE"}, {"id": "skill_opencode", "name": "opencode", "desc": "OpenCode CLI：委托编码、PR审查", "group": "skill", "category": "autonomous-ai-agents", "size": 8, "color": "#AF52DE"}, {"id": "skill_architecture-diagram", "name": "architecture-diagram", "desc": "架构图：深色主题SVG架构/云/基础设施图", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_ascii-art", "name": "ascii-art", "desc": "ASCII艺术：pyfiglet、cowsay、boxes、图片转ASCII", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_ascii-video", "name": "ascii-video", "desc": "ASCII视频：视频/音频转彩色ASCII MP4/GIF", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_baoyu-comic", "name": "baoyu-comic", "desc": "知识漫画：教育、传记、教程类漫画生成", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_baoyu-infographic", "name": "baoyu-infographic", "desc": "信息图：21种布局x21种风格可视化", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_claude-design", "name": "claude-design", "desc": "一次性HTML设计：落地页、PPT、原型", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_comfyui", "name": "comfyui", "desc": "ComfyUI：安装、启动、管理节点/模型，AI图像视频音频生成", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_design-md", "name": "design-md", "desc": "Google DESIGN.md：编写/验证/导出token规范文件", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_excalidraw", "name": "excalidraw", "desc": "手绘风格图：架构图、流程图、时序图JSON生成", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_humanizer", "name": "humanizer", "desc": "文本人性化：去除AI腔调，增加真实人声", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_ideation", "name": "ideation", "desc": "创意生成：通过创意约束生成项目想法", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_manim-video", "name": "manim-video", "desc": "Manim动画：3Blue1Brown风格数学/算法视频", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_p5js", "name": "p5js", "desc": "p5.js创意编程：生成艺术、着色器、交互式、3D", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_pixel-art", "name": "pixel-art", "desc": "像素艺术：NES、Game Boy、PICO-8时代调色板", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_popular-web-designs", "name": "popular-web-designs", "desc": "54个真实设计系统：Stripe、Linear、Vercel等HTML/CSS", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_pretext", "name": "pretext", "desc": "无DOM文本布局：ASCII艺术、排版流、文字游戏", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_sketch", "name": "sketch", "desc": "快速HTML原型：2-3个设计变体对比", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_songwriting-and-ai-music", "name": "songwriting-and-ai-music", "desc": "歌曲创作：作词技巧与Suno AI音乐提示词", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_touchdesigner-mcp", "name": "touchdesigner-mcp", "desc": "TouchDesigner实时视觉：创建节点、设置参数、连线", "group": "skill", "category": "creative", "size": 8, "color": "#FF6B6B"}, {"id": "skill_jupyter-live-kernel", "name": "jupyter-live-kernel", "desc": "Jupyter实时内核：通过hamelnb进行交互式Python", "group": "skill", "category": "data-science", "size": 8, "color": "#34C759"}, {"id": "skill_kanban-orchestrator", "name": "kanban-orchestrator", "desc": "看板编排器：任务分解策略与反诱惑规则", "group": "skill", "category": "devops", "size": 8, "color": "#FF9500"}, {"id": "skill_kanban-worker", "name": "kanban-worker", "desc": "看板工作器：执行场景、陷阱、边缘案例", "group": "skill", "category": "devops", "size": 8, "color": "#FF9500"}, {"id": "skill_webhook-subscriptions", "name": "webhook-subscriptions", "desc": "Webhook订阅：事件驱动的Agent运行", "group": "skill", "category": "devops", "size": 8, "color": "#FF9500"}, {"id": "skill_himalaya", "name": "himalaya", "desc": "终端邮件：Himalaya CLI的IMAP/SMTP操作", "group": "skill", "category": "email", "size": 8, "color": "#5AC8FA"}, {"id": "skill_minecraft-modpack-server", "name": "minecraft-modpack-server", "desc": "Minecraft模组服：托管CurseForge/Modrinth模组包", "group": "skill", "category": "gaming", "size": 8, "color": "#FF3B30"}, {"id": "skill_pokemon-player", "name": "pokemon-player", "desc": "宝可梦玩家：无头模拟器+RAM读取游戏", "group": "skill", "category": "gaming", "size": 8, "color": "#FF3B30"}, {"id": "skill_codebase-inspection", "name": "codebase-inspection", "desc": "代码库检查：pygount统计LOC、语言、比率", "group": "skill", "category": "github", "size": 8, "color": "#6E5494"}, {"id": "skill_github-auth", "name": "github-auth", "desc": "GitHub认证：HTTPS Token、SSH密钥、gh CLI登录", "group": "skill", "category": "github", "size": 8, "color": "#6E5494"}, {"id": "skill_github-code-review", "name": "github-code-review", "desc": "PR审查：diff、行内评论，通过gh或REST API", "group": "skill", "category": "github", "size": 8, "color": "#6E5494"}, {"id": "skill_github-issues", "name": "github-issues", "desc": "Issue管理：创建、分类、标签、分配", "group": "skill", "category": "github", "size": 8, "color": "#6E5494"}, {"id": "skill_github-pr-workflow", "name": "github-pr-workflow", "desc": "PR生命周期：分支、提交、发起、CI、合并", "group": "skill", "category": "github", "size": 8, "color": "#6E5494"}, {"id": "skill_github-repo-management", "name": "github-repo-management", "desc": "仓库管理：克隆/创建/Fork、管理远程和Release", "group": "skill", "category": "github", "size": 8, "color": "#6E5494"}, {"id": "skill_native-mcp", "name": "native-mcp", "desc": "MCP客户端：连接服务器、注册工具（stdio/HTTP）", "group": "skill", "category": "mcp", "size": 8, "color": "#FFD60A"}, {"id": "skill_gif-search", "name": "gif-search", "desc": "GIF搜索下载：通过Tenor API的curl+jq", "group": "skill", "category": "media", "size": 8, "color": "#FF2D55"}, {"id": "skill_heartmula", "name": "heartmula", "desc": "HeartMuLa：类Suno歌曲生成（歌词+标签）", "group": "skill", "category": "media", "size": 8, "color": "#FF2D55"}, {"id": "skill_songsee", "name": "songsee", "desc": "音频频谱：mel、chroma、MFCC特征提取", "group": "skill", "category": "media", "size": 8, "color": "#FF2D55"}, {"id": "skill_spotify", "name": "spotify", "desc": "Spotify控制：播放、搜索、队列、管理播放列表和设备", "group": "skill", "category": "media", "size": 8, "color": "#FF2D55"}, {"id": "skill_youtube-content", "name": "youtube-content", "desc": "YouTube内容：字幕转摘要、主题帖、博客", "group": "skill", "category": "media", "size": 8, "color": "#FF2D55"}, {"id": "skill_audiocraft-audio-generation", "name": "audiocraft-audio-generation", "desc": "AudioCraft：MusicGen文本转音乐、AudioGen文本转音效", "group": "skill", "category": "mlops", "size": 8, "color": "#0A84FF"}, {"id": "skill_dspy", "name": "dspy", "desc": "DSPy：声明式LM编程、自动优化提示词、RAG", "group": "skill", "category": "mlops", "size": 8, "color": "#0A84FF"}, {"id": "skill_evaluating-llms-harness", "name": "evaluating-llms-harness", "desc": "LLM评测：lm-eval-harness基准测试（MMLU、GSM8K等）", "group": "skill", "category": "mlops", "size": 8, "color": "#0A84FF"}, {"id": "skill_huggingface-hub", "name": "huggingface-hub", "desc": "HuggingFace Hub：搜索/下载/上传模型和数据集", "group": "skill", "category": "mlops", "size": 8, "color": "#0A84FF"}, {"id": "skill_llama-cpp", "name": "llama-cpp", "desc": "llama.cpp：本地GGUF推理+HF Hub模型发现", "group": "skill", "category": "mlops", "size": 8, "color": "#0A84FF"}, {"id": "skill_obliteratus", "name": "obliteratus", "desc": "模型去审查：diff-in-means方法消除LLM拒绝回答", "group": "skill", "category": "mlops", "size": 8, "color": "#0A84FF"}, {"id": "skill_segment-anything-model", "name": "segment-anything-model", "desc": "SAM：零样本图像分割（点、框、掩码）", "group": "skill", "category": "mlops", "size": 8, "color": "#0A84FF"}, {"id": "skill_serving-llms-vllm", "name": "serving-llms-vllm", "desc": "vLLM：高吞吐LLM推理服务、OpenAI API兼容", "group": "skill", "category": "mlops", "size": 8, "color": "#0A84FF"}, {"id": "skill_weights-and-biases", "name": "weights-and-biases", "desc": "W&B：记录ML实验、超参搜索、模型注册、仪表板", "group": "skill", "category": "mlops", "size": 8, "color": "#0A84FF"}, {"id": "skill_yuntu-ai", "name": "yuntu-ai", "desc": "云图AI对话：巨量云图AiMars场景化提示词模板库+FAQ", "group": "skill", "category": "mlops", "size": 8, "color": "#0A84FF"}, {"id": "skill_obsidian", "name": "obsidian", "desc": "", "group": "skill", "category": "note-taking", "size": 8, "color": "#FFD700"}, {"id": "skill_airtable", "name": "airtable", "desc": "", "group": "skill", "category": "productivity", "size": 8, "color": "#32D74B"}, {"id": "skill_google-workspace", "name": "google-workspace", "desc": "", "group": "skill", "category": "productivity", "size": 8, "color": "#32D74B"}, {"id": "skill_linear", "name": "linear", "desc": "", "group": "skill", "category": "productivity", "size": 8, "color": "#32D74B"}, {"id": "skill_maps", "name": "maps", "desc": "", "group": "skill", "category": "productivity", "size": 8, "color": "#32D74B"}, {"id": "skill_nano-pdf", "name": "nano-pdf", "desc": "", "group": "skill", "category": "productivity", "size": 8, "color": "#32D74B"}, {"id": "skill_notion", "name": "notion", "desc": "", "group": "skill", "category": "productivity", "size": 8, "color": "#32D74B"}, {"id": "skill_ocr-and-documents", "name": "ocr-and-documents", "desc": "", "group": "skill", "category": "productivity", "size": 8, "color": "#32D74B"}, {"id": "skill_powerpoint", "name": "powerpoint", "desc": "", "group": "skill", "category": "productivity", "size": 8, "color": "#32D74B"}, {"id": "skill_teams-meeting-pipeline", "name": "teams-meeting-pipeline", "desc": "", "group": "skill", "category": "productivity", "size": 8, "color": "#32D74B"}, {"id": "skill_godmode", "name": "godmode", "desc": "", "group": "skill", "category": "red-teaming", "size": 8, "color": "#FF375F"}, {"id": "skill_arxiv", "name": "arxiv", "desc": "", "group": "skill", "category": "research", "size": 8, "color": "#64D2FF"}, {"id": "skill_blogwatcher", "name": "blogwatcher", "desc": "", "group": "skill", "category": "research", "size": 8, "color": "#64D2FF"}, {"id": "skill_llm-wiki", "name": "llm-wiki", "desc": "", "group": "skill", "category": "research", "size": 8, "color": "#64D2FF"}, {"id": "skill_polymarket", "name": "polymarket", "desc": "", "group": "skill", "category": "research", "size": 8, "color": "#64D2FF"}, {"id": "skill_research-paper-writing", "name": "research-paper-writing", "desc": "", "group": "skill", "category": "research", "size": 8, "color": "#64D2FF"}, {"id": "skill_openhue", "name": "openhue", "desc": "", "group": "skill", "category": "smart-home", "size": 8, "color": "#FF9F0A"}, {"id": "skill_xurl", "name": "xurl", "desc": "", "group": "skill", "category": "social-media", "size": 8, "color": "#1DA1F2"}, {"id": "skill_debugging-hermes-tui-commands", "name": "debugging-hermes-tui-commands", "desc": "", "group": "skill", "category": "software-development", "size": 8, "color": "#30D158"}, {"id": "skill_hermes-agent-skill-authoring", "name": "hermes-agent-skill-authoring", "desc": "", "group": "skill", "category": "software-development", "size": 8, "color": "#30D158"}, {"id": "skill_node-inspect-debugger", "name": "node-inspect-debugger", "desc": "", "group": "skill", "category": "software-development", "size": 8, "color": "#30D158"}, {"id": "skill_plan", "name": "plan", "desc": "", "group": "skill", "category": "software-development", "size": 8, "color": "#30D158"}, {"id": "skill_python-debugpy", "name": "python-debugpy", "desc": "", "group": "skill", "category": "software-development", "size": 8, "color": "#30D158"}, {"id": "skill_requesting-code-review", "name": "requesting-code-review", "desc": "", "group": "skill", "category": "software-development", "size": 8, "color": "#30D158"}, {"id": "skill_spike", "name": "spike", "desc": "", "group": "skill", "category": "software-development", "size": 8, "color": "#30D158"}, {"id": "skill_subagent-driven-development", "name": "subagent-driven-development", "desc": "", "group": "skill", "category": "software-development", "size": 8, "color": "#30D158"}, {"id": "skill_systematic-debugging", "name": "systematic-debugging", "desc": "", "group": "skill", "category": "software-development", "size": 8, "color": "#30D158"}, {"id": "skill_test-driven-development", "name": "test-driven-development", "desc": "", "group": "skill", "category": "software-development", "size": 8, "color": "#30D158"}, {"id": "skill_writing-plans", "name": "writing-plans", "desc": "", "group": "skill", "category": "software-development", "size": 8, "color": "#30D158"}, {"id": "skill_dogfood", "name": "dogfood", "desc": "QA测试：探索性测试Web应用，找bug、证据、报告", "group": "skill", "category": "uncategorized", "size": 8, "color": "#8E8E93"}, {"id": "skill_yuanbao", "name": "yuanbao", "desc": "元宝群组：@提及用户、查询信息/成员", "group": "skill", "category": "uncategorized", "size": 8, "color": "#8E8E93"}, {"id": "mem_feishu_reading", "name": "💡 飞书文档读取", "desc": "feishu_doc_read 需评论上下文；browser_snapshot 对 Shadow DOM 空白。解决：browser_console → document.body.innerText，大文档需展开章节+滚动多次提取。", "group": "memory", "size": 13, "color": "#FFD700"}, {"id": "mem_chinese_output", "name": "💡 中文输出规则", "desc": "用户硬性要求：非代码输出必须中文。代码/命令/日志保持英文，但解释说明总结等对话内容必须中文。", "group": "memory", "size": 13, "color": "#FFD700"}, {"id": "kn_aimars_method", "name": "🧩 AiMars方法论", "desc": "从巨量云图 AiMars 提炼：数据→策略 AI Agent 六法则。核心「私有数据+领域方法论+LLM」三位一体。场景化架构+人机协作三步法。已存为 yuntu-ai 技能。", "group": "knowledge", "size": 15, "color": "#00E5FF"}, {"id": "kn_tunnel_deploy", "name": "🧩 隧道部署方案", "desc": "cloudflared tunnel --url 暴露本地HTTP到 trycloudflare.com 公网。无需账号，URL随机。长期方案：命名隧道或GitHub Pages。", "group": "knowledge", "size": 15, "color": "#00E5FF"}, {"id": "kn_skill_driven", "name": "🧩 技能驱动架构", "desc": "Hermes Agent 核心设计：88技能×18领域，每技能封装特定工具+工作流。skill_view 按需加载防上下文膨胀。用户自定义技能存入 ~/.hermes/skills/。", "group": "knowledge", "size": 15, "color": "#00E5FF"}, {"id": "user_center", "name": "🧑 用户", "desc": "macOS 15.7.4 · 飞书工作区 · 偏好中文 · 简洁风格", "group": "user", "size": 24, "color": "#FFFFFF"}, {"id": "learn_center", "name": "📚 学习记忆", "desc": "从使用中积累的经验、技巧和知识提炼", "group": "meta", "size": 20, "color": "#FFD700"}], "links": [{"source": "cat_apple", "target": "skill_apple-notes", "value": 0.6}, {"source": "cat_apple", "target": "skill_apple-reminders", "value": 0.6}, {"source": "cat_apple", "target": "skill_findmy", "value": 0.6}, {"source": "cat_apple", "target": "skill_imessage", "value": 0.6}, {"source": "cat_apple", "target": "skill_macos-computer-use", "value": 0.6}, {"source": "cat_autonomous-ai-agents", "target": "skill_claude-code", "value": 0.6}, {"source": "cat_autonomous-ai-agents", "target": "skill_codex", "value": 0.6}, {"source": "cat_autonomous-ai-agents", "target": "skill_hermes-agent", "value": 0.6}, {"source": "cat_autonomous-ai-agents", "target": "skill_opencode", "value": 0.6}, {"source": "cat_creative", "target": "skill_architecture-diagram", "value": 0.6}, {"source": "cat_creative", "target": "skill_ascii-art", "value": 0.6}, {"source": "cat_creative", "target": "skill_ascii-video", "value": 0.6}, {"source": "cat_creative", "target": "skill_baoyu-comic", "value": 0.6}, {"source": "cat_creative", "target": "skill_baoyu-infographic", "value": 0.6}, {"source": "cat_creative", "target": "skill_claude-design", "value": 0.6}, {"source": "cat_creative", "target": "skill_comfyui", "value": 0.6}, {"source": "cat_creative", "target": "skill_design-md", "value": 0.6}, {"source": "cat_creative", "target": "skill_excalidraw", "value": 0.6}, {"source": "cat_creative", "target": "skill_humanizer", "value": 0.6}, {"source": "cat_creative", "target": "skill_ideation", "value": 0.6}, {"source": "cat_creative", "target": "skill_manim-video", "value": 0.6}, {"source": "cat_creative", "target": "skill_p5js", "value": 0.6}, {"source": "cat_creative", "target": "skill_pixel-art", "value": 0.6}, {"source": "cat_creative", "target": "skill_popular-web-designs", "value": 0.6}, {"source": "cat_creative", "target": "skill_pretext", "value": 0.6}, {"source": "cat_creative", "target": "skill_sketch", "value": 0.6}, {"source": "cat_creative", "target": "skill_songwriting-and-ai-music", "value": 0.6}, {"source": "cat_creative", "target": "skill_touchdesigner-mcp", "value": 0.6}, {"source": "cat_data-science", "target": "skill_jupyter-live-kernel", "value": 0.6}, {"source": "cat_devops", "target": "skill_kanban-orchestrator", "value": 0.6}, {"source": "cat_devops", "target": "skill_kanban-worker", "value": 0.6}, {"source": "cat_devops", "target": "skill_webhook-subscriptions", "value": 0.6}, {"source": "cat_email", "target": "skill_himalaya", "value": 0.6}, {"source": "cat_gaming", "target": "skill_minecraft-modpack-server", "value": 0.6}, {"source": "cat_gaming", "target": "skill_pokemon-player", "value": 0.6}, {"source": "cat_github", "target": "skill_codebase-inspection", "value": 0.6}, {"source": "cat_github", "target": "skill_github-auth", "value": 0.6}, {"source": "cat_github", "target": "skill_github-code-review", "value": 0.6}, {"source": "cat_github", "target": "skill_github-issues", "value": 0.6}, {"source": "cat_github", "target": "skill_github-pr-workflow", "value": 0.6}, {"source": "cat_github", "target": "skill_github-repo-management", "value": 0.6}, {"source": "cat_mcp", "target": "skill_native-mcp", "value": 0.6}, {"source": "cat_media", "target": "skill_gif-search", "value": 0.6}, {"source": "cat_media", "target": "skill_heartmula", "value": 0.6}, {"source": "cat_media", "target": "skill_songsee", "value": 0.6}, {"source": "cat_media", "target": "skill_spotify", "value": 0.6}, {"source": "cat_media", "target": "skill_youtube-content", "value": 0.6}, {"source": "cat_mlops", "target": "skill_audiocraft-audio-generation", "value": 0.6}, {"source": "cat_mlops", "target": "skill_dspy", "value": 0.6}, {"source": "cat_mlops", "target": "skill_evaluating-llms-harness", "value": 0.6}, {"source": "cat_mlops", "target": "skill_huggingface-hub", "value": 0.6}, {"source": "cat_mlops", "target": "skill_llama-cpp", "value": 0.6}, {"source": "cat_mlops", "target": "skill_obliteratus", "value": 0.6}, {"source": "cat_mlops", "target": "skill_segment-anything-model", "value": 0.6}, {"source": "cat_mlops", "target": "skill_serving-llms-vllm", "value": 0.6}, {"source": "cat_mlops", "target": "skill_weights-and-biases", "value": 0.6}, {"source": "cat_mlops", "target": "skill_yuntu-ai", "value": 0.6}, {"source": "cat_note-taking", "target": "skill_obsidian", "value": 0.6}, {"source": "cat_productivity", "target": "skill_airtable", "value": 0.6}, {"source": "cat_productivity", "target": "skill_google-workspace", "value": 0.6}, {"source": "cat_productivity", "target": "skill_linear", "value": 0.6}, {"source": "cat_productivity", "target": "skill_maps", "value": 0.6}, {"source": "cat_productivity", "target": "skill_nano-pdf", "value": 0.6}, {"source": "cat_productivity", "target": "skill_notion", "value": 0.6}, {"source": "cat_productivity", "target": "skill_ocr-and-documents", "value": 0.6}, {"source": "cat_productivity", "target": "skill_powerpoint", "value": 0.6}, {"source": "cat_productivity", "target": "skill_teams-meeting-pipeline", "value": 0.6}, {"source": "cat_red-teaming", "target": "skill_godmode", "value": 0.6}, {"source": "cat_research", "target": "skill_arxiv", "value": 0.6}, {"source": "cat_research", "target": "skill_blogwatcher", "value": 0.6}, {"source": "cat_research", "target": "skill_llm-wiki", "value": 0.6}, {"source": "cat_research", "target": "skill_polymarket", "value": 0.6}, {"source": "cat_research", "target": "skill_research-paper-writing", "value": 0.6}, {"source": "cat_smart-home", "target": "skill_openhue", "value": 0.6}, {"source": "cat_social-media", "target": "skill_xurl", "value": 0.6}, {"source": "cat_software-development", "target": "skill_debugging-hermes-tui-commands", "value": 0.6}, {"source": "cat_software-development", "target": "skill_hermes-agent-skill-authoring", "value": 0.6}, {"source": "cat_software-development", "target": "skill_node-inspect-debugger", "value": 0.6}, {"source": "cat_software-development", "target": "skill_plan", "value": 0.6}, {"source": "cat_software-development", "target": "skill_python-debugpy", "value": 0.6}, {"source": "cat_software-development", "target": "skill_requesting-code-review", "value": 0.6}, {"source": "cat_software-development", "target": "skill_spike", "value": 0.6}, {"source": "cat_software-development", "target": "skill_subagent-driven-development", "value": 0.6}, {"source": "cat_software-development", "target": "skill_systematic-debugging", "value": 0.6}, {"source": "cat_software-development", "target": "skill_test-driven-development", "value": 0.6}, {"source": "cat_software-development", "target": "skill_writing-plans", "value": 0.6}, {"source": "cat_uncategorized", "target": "skill_dogfood", "value": 0.6}, {"source": "cat_uncategorized", "target": "skill_yuanbao", "value": 0.6}, {"source": "kn_aimars_method", "target": "skill_yuntu-ai", "value": 0.3}, {"source": "kn_aimars_method", "target": "cat_mlops", "value": 0.3}, {"source": "kn_tunnel_deploy", "target": "cat_devops", "value": 0.3}, {"source": "kn_skill_driven", "target": "skill_hermes-agent-skill-authoring", "value": 0.3}, {"source": "kn_skill_driven", "target": "skill_hermes-agent", "value": 0.3}, {"source": "user_center", "target": "cat_software-development", "value": 0.2}, {"source": "user_center", "target": "cat_mlops", "value": 0.2}, {"source": "user_center", "target": "cat_productivity", "value": 0.2}, {"source": "user_center", "target": "cat_creative", "value": 0.2}, {"source": "user_center", "target": "cat_research", "value": 0.2}, {"source": "learn_center", "target": "mem_feishu_reading", "value": 0.3}, {"source": "learn_center", "target": "mem_chinese_output", "value": 0.3}, {"source": "learn_center", "target": "kn_aimars_method", "value": 0.3}, {"source": "learn_center", "target": "kn_tunnel_deploy", "value": 0.3}, {"source": "learn_center", "target": "kn_skill_driven", "value": 0.3}, {"source": "learn_center", "target": "user_center", "value": 0.5}]};
+
+const W = window.innerWidth, H = window.innerHeight;
+const svg = d3.select("#container").append("svg").attr("viewBox", [0, 0, W, H]);
+const g = svg.append("g");
+
+const zoom = d3.zoom().scaleExtent([0.12, 4]).on("zoom", e => g.attr("transform", e.transform));
+svg.call(zoom).call(zoom.transform, d3.zoomIdentity.translate(W/2, H/2));
+
+const tooltip = d3.select("#tooltip");
+const tipName = tooltip.select(".name"), tipCat = tooltip.select(".cat"), tipDesc = tooltip.select(".desc");
+
+const nodes = rawData.nodes.map(d => ({...d}));
+const links = rawData.links.map(d => ({...d}));
+const nodeMap = new Map(nodes.map(d => [d.id, d]));
+
+// Hexagon path generator
+function hexPath(r) {
+  const pts = [];
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 3 * i - Math.PI / 6;
+    pts.push([r * Math.cos(a), r * Math.sin(a)]);
+  }
+  return "M" + pts.map(p => p.join(",")).join("L") + "Z";
+}
+
+// Diamond path generator
+function diamondPath(r) {
+  return `M0,${-r} L${r},0 L0,${r} L${-r},0 Z`;
+}
+
+// All non-category nodes rendered centrally
+const specialGroups = ["skill", "memory", "knowledge", "user", "meta"];
+const allSpecial = nodes.filter(d => specialGroups.includes(d.group));
+const catNodes = nodes.filter(d => d.group === "category");
+
+// Legend
+const legend = d3.select("#legend");
+legend.append("h3").text("📂 分类");
+catNodes.forEach(cat => {
+  const cnt = nodes.filter(n => n.group === "skill" && n.category === cat.cat).length;
+  const item = legend.append("div").attr("class", "legend-item");
+  item.append("div").attr("class", "legend-dot").style("background", cat.color);
+  item.append("span").text(cat.name);
+  item.append("span").attr("class", "legend-count").text(cnt);
+  item.on("click", () => highlightCategory(cat.cat));
+  item.on("dblclick", () => resetHighlight());
+});
+legend.append("h4").text("🧠 特殊节点");
+[["legend-diamond","💡 记忆 (经验)","#FFD700"],["legend-hex","🧩 知识 (提炼)","#00E5FF"],
+ ["legend-dot","🧑 用户中心","#FFFFFF"],["legend-dot","📚 学习记忆","#FFD700"]].forEach(([cls,label,clr]) => {
+  const item = legend.append("div").attr("class", "legend-item");
+  item.append("div").attr("class", cls).style("background", clr);
+  item.append("span").text(label);
+});
+
+// Simulation
+const sim = d3.forceSimulation(nodes)
+  .force("link", d3.forceLink(links).id(d => d.id).distance(d => {
+    const tgt = nodeMap.get(d.target.id || d.target);
+    const cnt = tgt && tgt.group === "category" ? nodes.filter(n => n.group === "skill" && n.category === tgt.cat).length : 0;
+    return d.value < 0.4 ? 120 + cnt * 3 : 60 + cnt * 2;
+  }))
+  .force("charge", d3.forceManyBody().strength(d => {
+    if (d.group === "category") return -350;
+    if (d.group === "knowledge") return -200;
+    if (d.group === "memory") return -180;
+    if (d.group === "user" || d.group === "meta") return -300;
+    return -60;
+  }))
+  .force("center", d3.forceCenter(0, 0))
+  .force("collision", d3.forceCollide().radius(d => {
+    if (d.group === "category") return 38;
+    if (["user","meta","knowledge"].includes(d.group)) return 28;
+    if (d.group === "memory") return 22;
+    return 10;
+  }));
+
+// Links
+const linkG = g.append("g").selectAll("line").data(links).join("line")
+  .attr("class", d => `link ${(d.value || 0) < 0.4 ? "cross" : ""}`);
+
+// Category nodes
+const catG = g.append("g").selectAll("g").data(catNodes).join("g")
+  .attr("class", "node node-cat")
+  .call(d3.drag().on("start", (e,d) => { if(!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x;d.fy=d.y; })
+    .on("drag", (e,d) => { d.fx=e.x;d.fy=e.y; }).on("end", (e,d) => { if(!e.active) sim.alphaTarget(0); d.fx=null;d.fy=null; }));
+catG.append("circle").attr("r", d => d.size).attr("fill", d => d.color).attr("stroke", "#161b22").attr("stroke-width", 2);
+catG.append("text").attr("dy", d => d.size + 13).text(d => d.name);
+
+// Special nodes
+const specialG = g.append("g").selectAll("g").data(allSpecial).join("g")
+  .attr("class", d => `node node-${d.group}`)
+  .call(d3.drag().on("start", (e,d) => { if(!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x;d.fy=d.y; })
+    .on("drag", (e,d) => { d.fx=e.x;d.fy=e.y; }).on("end", (e,d) => { if(!e.active) sim.alphaTarget(0); d.fx=null;d.fy=null; }));
+
+// Draw different shapes per group
+specialG.each(function(d) {
+  const el = d3.select(this);
+  if (d.group === "memory") {
+    el.append("path").attr("d", diamondPath(d.size)).attr("fill", d.color).attr("stroke", "#0d1117").attr("stroke-width", 1.5).attr("opacity", 0.9);
+  } else if (d.group === "knowledge") {
+    el.append("path").attr("d", hexPath(d.size)).attr("fill", d.color).attr("stroke", "#0d1117").attr("stroke-width", 1.5).attr("opacity", 0.9);
+  } else {
+    el.append("circle").attr("r", d.size).attr("fill", d.color).attr("stroke", "#0d1117").attr("stroke-width", d.group==="user"?2.5:1).attr("opacity", d.group==="user"?1:0.8);
+  }
+  el.append("text").attr("dy", d.group === "user" || d.group === "meta" ? d.size + 13 : -d.size - 4).text(d.name);
+});
+
+// Hover
+function showTooltip(e, d, extra) {
+  tipName.text(d.name);
+  tipCat.text(extra || d.desc ? (d.categoryName || d.group || "") : "");
+  tipDesc.text(d.desc || "");
+  tooltip.style("opacity", 1);
+  const x = e.clientX + 15, y = e.clientY - 10;
+  tooltip.style("left", (x + 380 > W ? x - 400 : x) + "px").style("top", y + "px");
+}
+
+specialG.on("mouseenter", (e, d) => {
+  const extra = d.group === "skill" ? d.categoryName : (d.group === "memory" ? "💡 经验记忆" : d.group === "knowledge" ? "🧩 知识提炼" : d.group === "user" ? "👤 用户" : "📚 学习中心");
+  showTooltip(e, d, extra);
+}).on("mousemove", (e,d) => tooltip.style("left", (e.clientX+380>W?e.clientX-400:e.clientX+15)+"px").style("top",(e.clientY-10)+"px"))
+  .on("mouseleave", () => tooltip.style("opacity", 0));
+
+catG.on("mouseenter", (e, d) => {
+  const cnt = nodes.filter(n => n.group === "skill" && n.category === d.cat).length;
+  tipName.text(d.name); tipCat.text(`${cnt} 个技能`); tipDesc.text("双击展开 · 单击高亮 · 拖拽移动");
+  tooltip.style("opacity", 1);
+}).on("mousemove", e => tooltip.style("left",(e.clientX+15)+"px").style("top",(e.clientY-10)+"px"))
+  .on("mouseleave", () => tooltip.style("opacity", 0))
+  .on("dblclick", (e, d) => highlightCategory(d.cat));
+
+// Tick
+sim.on("tick", () => {
+  linkG.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+  catG.attr("transform", d => `translate(${d.x},${d.y})`);
+  specialG.attr("transform", d => `translate(${d.x},${d.y})`);
+});
+
+// Highlight
+function highlightCategory(cat) {
+  specialG.classed("dimmed", d => d.group === "skill" && d.category !== cat);
+  catG.classed("dimmed", d => d.cat !== cat);
+  linkG.classed("dimmed", d => { const t = nodeMap.get(d.target.id||d.target); return !t || (t.group==="skill" && t.cat!==cat); });
+  linkG.classed("highlight", d => { const t = nodeMap.get(d.target.id||d.target); return t && t.group==="skill" && t.cat===cat; });
+  d3.select("#search").property("value", "");
+}
+
+function resetHighlight() {
+  specialG.classed("dimmed", false); catG.classed("dimmed", false);
+  linkG.classed("dimmed", false).classed("highlight", false);
+  d3.select("#search").property("value", "");
+}
+
+// Search
+d3.select("#search").on("input", () => {
+  const q = d3.select("#search").property("value").toLowerCase().trim();
+  if (!q) { resetHighlight(); return; }
+  const matched = new Set();
+  nodes.forEach(d => { if ((d.name||"").toLowerCase().includes(q) || (d.desc||"").includes(q) || (d.categoryName||"").includes(q)) matched.add(d.id); });
+  specialG.classed("dimmed", d => !matched.has(d.id));
+  catG.classed("dimmed", d => !nodes.filter(n => n.group==="skill" && n.category===d.cat).some(s => matched.has(s.id)));
+  linkG.classed("dimmed", d => !matched.has(d.target.id||d.target));
+});
+</script>
+</body>
+</html>
